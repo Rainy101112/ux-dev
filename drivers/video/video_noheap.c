@@ -38,6 +38,8 @@ uint32_t c_width, c_height; // Screen character width and height
 uint32_t fore_color; // Foreground color
 uint32_t back_color; // Background color
 
+int video_heaped_initialized = 0;
+
 /* Get video information */
 video_info_t video_get_info(void)
 {

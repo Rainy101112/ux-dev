@@ -22,6 +22,8 @@
 tty_device_t  boot_tty     = {0, 0};
 tty_device_t *boot_tty_ptr = 0;
 
+extern int video_heaped_initialized;
+
 static char           boot_tty_str_buf[16]   = {0}; // Persistent buffer
 static char           tty_buff[TTY_BUF_SIZE] = {0};
 static volatile char *tty_buff_ptr           = tty_buff;

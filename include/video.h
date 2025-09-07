@@ -34,7 +34,7 @@ typedef struct {
 typedef struct {
     uint32_t *bitmap;      // Font bitmap to pre-render
     uint32_t  timestamp;   // For LRU
-    uint8_t   valid;    // Cache is vaild/invaild
+    uint8_t   valid;       // Cache is vaild/invaild
 } glyph_cache_t;
 
 typedef struct {
@@ -47,21 +47,6 @@ typedef struct {
         uint32_t x;
         uint32_t y;
 } position_t;
-
-typedef struct video_handler
-{
-        void (*video_clear)(void);
-        void (*video_clear_color)(uint32_t);
-        void (*video_scroll)(void);
-        void (*video_draw_pixel)(uint32_t, uint32_t, uint32_t);
-        uint32_t (*video_get_pixel)(uint32_t, uint32_t);
-        void (*video_invoke_area)(position_t, position_t, void (*callback)(position_t));
-        void (*video_draw_rect)(position_t, position_t, uint32_t);
-        void (*video_draw_char)(const char, uint32_t, uint32_t, uint32_t);
-        void (*video_put_char)(const char, uint32_t);
-        void (*video_put_string)(const char *);
-        void (*video_put_string_color)(const char *, uint32_t);
-} video_handler_t;
 
 typedef struct {
         uint32_t *framebuffer;       // Frame buffer
@@ -132,8 +117,6 @@ void video_put_string_color(const char *str, uint32_t color);
 /* Set display region size */
 void video_display_size_set(uint32_t width, uint32_t height);
 
-void video_display_position_get(uint32_t *x, uint32_t *y);
-
 void video_display_position_set(uint32_t x, uint32_t y);
 
 void video_move_to(uint32_t c_x, uint32_t c_y);
@@ -146,6 +129,44 @@ uint32_t video_get_pixel_display(uint32_t dx, uint32_t dy);
 
 void video_draw_pixel_display(uint32_t dx, uint32_t dy, uint32_t color);
 
-void video_clear_display_area(void);
+void video_heaped_clear_display_area(void);
+
+void video_heaped_put_string_color(const char *str, uint32_t color);
+
+void video_heaped_put_string(const char *str);
+
+void video_heaped_scroll(void);
+
+void video_heaped_put_char(const char c, uint32_t color);
+
+void video_heaped_draw_char(const char c, uint32_t x, uint32_t y, uint32_t color);
+
+void video_heaped_draw_rect(position_t p0, position_t p1, uint32_t color);
+
+void video_refresh(void);
+
+void video_partial_refresh(void);
+
+uint32_t video_heaped_get_pixel(uint32_t x, uint32_t y);
+
+void video_heaped_invoke_area(position_t p0, position_t p1, void (*callback)(position_t p));
+
+void video_heaped_draw_pixel(uint32_t x, uint32_t y, uint32_t color);
+
+void video_heaped_move_to(uint32_t c_x, uint32_t c_y);
+
+void video_heaped_clear_color(uint32_t color);
+
+void video_heaped_clear(void);
+
+void video_init_cache(void);
+
+void video_mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+
+void video_heaped_init(void);
+
+void video_heaped_display_position_set(uint32_t x, uint32_t y);
+
+void video_heaped_display_position_get(uint32_t *x, uint32_t *y);
 
 #endif // INCLUDE_VIDEO_H_

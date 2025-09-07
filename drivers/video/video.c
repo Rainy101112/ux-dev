@@ -26,22 +26,22 @@
 
 extern uint8_t ascii_font[]; // Fonts
 
-uint64_t  width;  // Screen width
-uint64_t  height; // Screen height
-uint64_t  stride; // Frame buffer line spacing
-uint32_t *buffer; // Video Memory (We think BPP is 32. If BPP is other value, you have to change it)
+extern uint64_t  width;  // Screen width
+extern uint64_t  height; // Screen height
+extern uint64_t  stride; // Frame buffer line spacing
+extern uint32_t *buffer; // Video Memory (We think BPP is 32. If BPP is other value, you have to change it)
 
-uint64_t display_width;
-uint64_t display_height;
-uint32_t display_c_width, display_c_height;
-uint32_t display_offset_x, display_offset_y;
+extern uint64_t display_width;
+extern uint64_t display_height;
+extern uint32_t display_c_width, display_c_height;
+extern uint32_t display_offset_x, display_offset_y;
 
-uint32_t x, y;              // The current absolute cursor position
-uint32_t cx, cy;            // The character position of the current cursor
-uint32_t c_width, c_height; // Screen character width and height
+extern uint32_t x, y;              // The current absolute cursor position
+extern uint32_t cx, cy;            // The character position of the current cursor
+extern uint32_t c_width, c_height; // Screen character width and height
 
-uint32_t fore_color; // Foreground color
-uint32_t back_color; // Background color
+extern uint32_t fore_color; // Foreground color
+extern uint32_t back_color; // Background color
 
 static uint32_t glyph_cache_memory[MAX_CACHE_SIZE * 9 * 16] = {0};
 
@@ -53,59 +53,8 @@ static uint8_t           double_buffering_enabled = 0;
 static uint32_t *back_buffer = NULL;
 static uint32_t back_buffer_stride = 0;
 
-/* Get video information */
-video_info_t video_get_info(void)
-{
-    video_info_t               info;
-    struct limine_framebuffer *framebuffer = get_framebuffer();
-
-    info.framebuffer = framebuffer->address;
-
-    info.width      = framebuffer->width;
-    info.height     = framebuffer->height;
-    info.stride     = framebuffer->pitch / (framebuffer->bpp / 8);
-    info.c_width    = display_c_width;  // Use display character width
-    info.c_height   = display_c_height; // Use display character height
-    info.cx         = cx;
-    info.cy         = cy;
-    info.fore_color = fore_color;
-    info.back_color = back_color;
-
-    info.bpp              = framebuffer->bpp;
-    info.memory_model     = framebuffer->memory_model;
-    info.red_mask_size    = framebuffer->red_mask_size;
-    info.red_mask_shift   = framebuffer->red_mask_shift;
-    info.green_mask_size  = framebuffer->green_mask_size;
-    info.green_mask_shift = framebuffer->green_mask_shift;
-    info.blue_mask_size   = framebuffer->blue_mask_size;
-    info.blue_mask_shift  = framebuffer->blue_mask_shift;
-    info.edid_size        = framebuffer->edid_size;
-    info.edid             = framebuffer->edid;
-
-    return info;
-}
-
-/* Get the frame buffer */
-struct limine_framebuffer *get_framebuffer(void)
-{
-    return framebuffer_request.response->framebuffers[0];
-}
-
-/* Set display size for character rendering */
-void video_display_size_set(uint32_t width, uint32_t height)
-{
-    display_width = width;
-    display_height = height;
-    display_c_width = width / 9;
-    display_c_height = height / 16;
-    
-    // Reset cursor position when display size changes
-    cx = 0;
-    cy = 0;
-}
-
 /* Set display position on screen */
-void video_display_position_set(uint32_t x, uint32_t y)
+void video_heaped_display_position_set(uint32_t x, uint32_t y)
 {
     // Ensure the display area stays within screen bounds
     if (x + display_width > width) {
@@ -129,14 +78,14 @@ void video_display_position_set(uint32_t x, uint32_t y)
 }
 
 /* Get display position */
-void video_display_position_get(uint32_t *x, uint32_t *y)
+void video_heaped_display_position_get(uint32_t *x, uint32_t *y)
 {
     *x = display_offset_x;
     *y = display_offset_y;
 }
 
 /* Clear only the display area */
-void video_clear_display_area(void)
+void video_heaped_clear_display_area(void)
 {
     uint32_t end_x = display_offset_x + display_width;
     uint32_t end_y = display_offset_y + display_height;
@@ -164,6 +113,7 @@ void video_clear_display_area(void)
 /* Initialize Video */
 void video_heaped_init(void)
 {
+	video_clear();
     if (!framebuffer_request.response || framebuffer_request.response->framebuffer_count < 1) krn_halt();
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
     buffer                                 = framebuffer->address;
@@ -202,6 +152,9 @@ void video_heaped_init(void)
     video_init_cache();
 
     video_heaped_clear();
+
+	extern int video_heaped_initialized;
+	video_heaped_initialized = 1;
 }
 
 /* Mark dirty region */

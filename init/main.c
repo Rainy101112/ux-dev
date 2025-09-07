@@ -86,6 +86,7 @@ void kernel_entry(void)
     isr_registe_handle(); // Register ISR interrupt processing
     acpi_init();          // Initialize ACPI
     smp_init();           // Initialize SMP
+    video_heaped_init();
     print_memory_map();   // Print memory map information
     init_frame();         // Initialize memory frame
     pci_init();           // Initialize PCI
