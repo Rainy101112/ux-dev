@@ -52,6 +52,37 @@ video_info_t video_get_info(void);
 /* Get the frame buffer */
 struct limine_framebuffer *get_framebuffer(void);
 
+#define bool _Bool
+#define true 1
+#define false 0
+
+typedef struct {
+    uint32_t x1, y1; // Top left corner
+    uint32_t x2, y2; // Bottom right corner
+    bool     dirty;  // Dirty or not
+} dirty_region_t;
+
+// 字体缓存结构
+typedef struct {
+    uint32_t *bitmap;      // Font bitmap to pre-render
+    uint32_t  timestamp;   // For LRU
+    bool      valid;       // Cache is vaild/invaild
+} glyph_cache_t;
+
+// 双缓冲配置
+#define DOUBLE_BUFFERING 1
+#define MAX_CACHE_SIZE   256  // 256 bytes
+
+void video_mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+
+void video_refresh(void);
+
+void video_partial_refresh(void);
+
+void video_init_cache(void);
+
+void video_flush_cache(void);
+
 /* Initialize Video */
 void video_init(void);
 

@@ -17,6 +17,12 @@
 #include "stddef.h"
 #include "stdint.h"
 #include "uinxed.h"
+#include "string.h"
+
+#define CPU_FEATURE_SSE 1
+
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 extern uint8_t ascii_font[]; // Fonts
 
@@ -31,6 +37,17 @@ uint32_t c_width, c_height; // Screen character width and height
 
 uint32_t fore_color; // Foreground color
 uint32_t back_color; // Background color
+
+static uint32_t glyph_cache_memory[MAX_CACHE_SIZE * 9 * 16] = {0};
+
+static dirty_region_t dirty_region = {0};
+static glyph_cache_t  glyph_cache[MAX_CACHE_SIZE] = {0};
+static uint32_t       cache_timestamp = 0;
+static bool           double_buffering_enabled = false;
+
+#define MAX_BUFFER_SIZE (3840 * 2160 * 2)
+static uint32_t back_buffer[MAX_BUFFER_SIZE / sizeof(uint32_t)] = {0};
+static uint32_t back_buffer_stride = 0;
 
 /* Get video information */
 video_info_t video_get_info(void)
@@ -86,14 +103,148 @@ void video_init(void)
 
     fore_color = color_to_fb_color((color_t) {0xaa, 0xaa, 0xaa});
     back_color = color_to_fb_color((color_t) {0x00, 0x00, 0x00});
+    
+    /* Initialize the dirty rectangle technology */
+    dirty_region.dirty = false;
+    
+    /* Initialize double buffering */
+#if DOUBLE_BUFFERING
+    uint64_t required_size = stride * height * sizeof(uint32_t);
+    if (required_size <= sizeof(back_buffer)) {
+        back_buffer_stride = stride;
+        double_buffering_enabled = true;
+        /* Clean back buffer */
+        for (uint32_t i = 0; i < stride * height; i++) {
+            back_buffer[i] = back_color;
+        }
+    }
+#endif
+
+    video_init_cache();
+
     video_clear();
+}
+
+/* Mark dirty region */
+void video_mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
+{
+    if (!dirty_region.dirty) {
+        /* First dirty region */
+        dirty_region.x1 = x;
+        dirty_region.y1 = y;
+        dirty_region.x2 = x + w;
+        dirty_region.y2 = y + h;
+        dirty_region.dirty = true;
+    } else {
+        /* Merge to current dirty region */
+        dirty_region.x1 = MIN(dirty_region.x1, x);
+        dirty_region.y1 = MIN(dirty_region.y1, y);
+        dirty_region.x2 = MAX(dirty_region.x2, x + w);
+        dirty_region.y2 = MAX(dirty_region.y2, y + h);
+    }
+    
+    /* Limit */
+    dirty_region.x2 = MIN(dirty_region.x2, width);
+    dirty_region.y2 = MIN(dirty_region.y2, height);
+}
+
+/* 初始化字体缓存 */
+void video_init_cache(void)
+{
+    for (int i = 0; i < MAX_CACHE_SIZE; i++) {
+        glyph_cache[i].valid = false;
+        glyph_cache[i].bitmap = NULL;
+        glyph_cache[i].timestamp = 0;
+    }
+}
+
+/* Get glyph cache */
+static glyph_cache_t *video_get_glyph_cache(char c, uint32_t color)
+{
+    uint32_t index = (uint8_t)c;
+    
+    if (glyph_cache[index].valid) {
+        glyph_cache[index].timestamp = ++cache_timestamp;
+        return &glyph_cache[index];
+    }
+    
+    /* Use independent cache memory */
+    glyph_cache[index].bitmap = &glyph_cache_memory[index * 9 * 16];
+    
+    /* Pre-render font */
+    uint8_t *font = ascii_font + (size_t)c * 16;
+    uint32_t *bitmap = glyph_cache[index].bitmap;
+    
+    for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 9; j++) {
+            uint32_t pixel_color = (font[i] & (0x80 >> j)) ? color : back_color;
+            bitmap[i * 9 + j] = pixel_color;
+        }
+    }
+    
+    glyph_cache[index].valid = true;
+    glyph_cache[index].timestamp = ++cache_timestamp;
+    return &glyph_cache[index];
+}
+
+/* Draw char with SSE optimization */
+static void video_draw_char_sse(const char c, uint32_t x, uint32_t y, uint32_t color)
+{
+    glyph_cache_t *cache = video_get_glyph_cache(c, color);
+    if (cache == NULL || !cache->valid) return;
+    
+    uint32_t *target_buffer = double_buffering_enabled ? back_buffer : buffer;
+    uint32_t target_stride = double_buffering_enabled ? back_buffer_stride : stride;
+    
+    uint32_t *src = cache->bitmap;
+    uint32_t *dest = target_buffer + y * target_stride + x;
+    
+#if CPU_FEATURE_SSE
+    if (cpu_support_sse()) {
+        for (int i = 0; i < 16; i++) {
+            for (int j = 0; j < 9; j += 4) {
+                int pixels_to_copy = MIN(4, 9 - j);
+                if (pixels_to_copy == 4) {
+                    __asm__ volatile(
+                        "movdqu (%0), %%xmm0\n\t"
+                        "movdqu %%xmm0, (%1)\n\t"
+                        : 
+                        : "r" (src + j), "r" (dest + j)
+                        : "xmm0", "memory"
+                    );
+                } else {
+                    /* Process the remaining pixies */
+                    for (int k = 0; k < pixels_to_copy; k++) {
+                        dest[j + k] = src[j + k];
+                    }
+                }
+            }
+            src += 9;
+            dest += target_stride;
+        }
+    } else 
+#endif
+    {
+        /* Copy normally */
+        for (int i = 0; i < 16; i++) {
+            for (int j = 0; j < 9; j++) {
+                dest[j] = src[j];
+            }
+            src += 9;
+            dest += target_stride;
+        }
+    }
+    
+    /* Mark dirty region */
+    video_mark_dirty(x, y, 9, 16);
 }
 
 /* Clear screen */
 void video_clear(void)
 {
     back_color = color_to_fb_color((color_t) {0x00, 0x00, 0x00});
-    for (uint32_t i = 0; i < (stride * height); i++) buffer[i] = back_color;
+    uint32_t *target = double_buffering_enabled ? back_buffer : buffer;
+    for (uint32_t i = 0; i < (stride * height); i++) target[i] = back_color;
     x  = 2;
     y  = 0;
     cx = cy = 0;
@@ -103,7 +254,7 @@ void video_clear(void)
 void video_clear_color(uint32_t color)
 {
     back_color = color;
-    for (uint32_t i = 0; i < (stride * height); i++) buffer[i] = back_color;
+    for (uint32_t i = 0; i < (stride * height); i++) back_buffer[i] = back_color;
     x  = 2;
     y  = 0;
     cx = cy = 0;
@@ -116,7 +267,7 @@ void video_move_to(uint32_t c_x, uint32_t c_y)
     cy = c_y;
 }
 
-/* Screen scrolling operation */
+/* Screen scroll */
 void video_scroll(void)
 {
     if ((uint32_t)cx >= c_width) {
@@ -127,57 +278,36 @@ void video_scroll(void)
     }
 
     if ((uint32_t)cy >= c_height) {
-        uint8_t       *dest  = (uint8_t *)buffer;
-        const uint8_t *src   = (const uint8_t *)(buffer + stride * 16);
-        size_t         count = stride * (height - 16) * sizeof(uint32_t);
-
-#if CPU_FEATURE_SSE
-        if (cpu_support_sse()) {
-            size_t blocks = count / 64;
-            size_t remain = count % 64;
-
-            __asm__ volatile("1:\n\t"
-                             "movdqu (%[src]), %%xmm0\n\t"
-                             "movdqu 16(%[src]), %%xmm1\n\t"
-                             "movdqu 32(%[src]), %%xmm2\n\t"
-                             "movdqu 48(%[src]), %%xmm3\n\t"
-                             "movdqu %%xmm0, (%[dest])\n\t"
-                             "movdqu %%xmm1, 16(%[dest])\n\t"
-                             "movdqu %%xmm2, 32(%[dest])\n\t"
-                             "movdqu %%xmm3, 48(%[dest])\n\t"
-                             "add $64, %[src]\n\t"
-                             "add $64, %[dest]\n\t"
-                             "dec %[blocks]\n\t"
-                             "jnz 1b\n\t"
-                             : [src] "+r"(src), [dest] "+r"(dest), [blocks] "+r"(blocks)
-                             :
-                             : "xmm0", "xmm1", "xmm2", "xmm3", "memory");
-
-            for (size_t i = 0; i < remain; i++) *dest++ = *src++;
+        uint32_t scroll_height = height - 16;
+        uint32_t scroll_size = stride * scroll_height * sizeof(uint32_t);
+        
+        if (double_buffering_enabled) {
+            memmove(back_buffer, back_buffer + stride * 16, scroll_size);
         } else {
-            count /= 8;
-            __asm__ volatile("rep movsq" : "+D"(dest), "+S"(src), "+c"(count)::"memory");
+            memmove(buffer, buffer + stride * 16, scroll_size);
         }
-#else
-        count /= 8;
-        __asm__ volatile("rep movsq" : "+D"(dest), "+S"(src), "+c"(count)::"memory");
-#endif
-
-        video_draw_rect((position_t) {0, height - 16}, (position_t) {stride, height}, back_color);
+        
+        video_draw_rect((position_t){0, scroll_height}, 
+                   (position_t){width, height}, back_color);
+        
         cy = c_height - 1;
+        
+        /* Mark entire screen to dirty (Need to refresh) */
+        video_mark_dirty(0, 0, width, height);
+        video_refresh();
     }
 }
 
-/* Draw a pixel at the specified coordinates on the screen */
 void video_draw_pixel(uint32_t x, uint32_t y, uint32_t color)
 {
-    (buffer)[y * stride + x] = color;
+    uint32_t *target = double_buffering_enabled ? back_buffer : buffer;
+    target[y * stride + x] = color;
 }
 
-/* Get a pixel at the specified coordinates on the screen */
 uint32_t video_get_pixel(uint32_t x, uint32_t y)
 {
-    return (buffer)[y * stride + x];
+    uint32_t *target = double_buffering_enabled ? back_buffer : buffer;
+    return target[y * stride + x];
 }
 
 /* Iterate over a area on the screen and run a callback function in each iteration */
@@ -189,6 +319,94 @@ void video_invoke_area(position_t p0, position_t p1, void (*callback)(position_t
     }
 }
 
+/* Refresh partial region */
+void video_partial_refresh(void)
+{
+    if (!dirty_region.dirty) return;
+
+    uint32_t width = dirty_region.x2 - dirty_region.x1;
+    uint32_t height = dirty_region.y2 - dirty_region.y1;
+
+    if (width == 0 || height == 0) return;
+
+    for (uint32_t y = dirty_region.y1; y < dirty_region.y2; y++) {
+        uint32_t *src = back_buffer + y * back_buffer_stride + dirty_region.x1;
+        uint32_t *dest = buffer + y * stride + dirty_region.x1;
+        
+#if CPU_FEATURE_SSE
+        if (cpu_support_sse()) {
+            uint32_t remaining = width;
+            while (remaining >= 4) {
+                __asm__ volatile(
+                    "movdqu (%0), %%xmm0\n\t"
+                    "movdqu %%xmm0, (%1)\n\t"
+                    : 
+                    : "r" (src), "r" (dest)
+                    : "xmm0", "memory"
+                );
+                src += 4;
+                dest += 4;
+                remaining -= 4;
+            }
+            /* Remaining pixles */
+            while (remaining > 0) {
+                *dest++ = *src++;
+                remaining--;
+            }
+        } else 
+#endif
+        {
+            /* Normal */
+            for (uint32_t x = 0; x < width; x++) {
+                dest[x] = src[x];
+            }
+        }
+    }
+    
+    /* Clean dirty mark */
+    dirty_region.dirty = false;
+}
+
+/* Refresh entire screen */
+void video_refresh(void)
+{
+    if (!double_buffering_enabled) return;
+
+    uint64_t total_pixels = stride * height;
+
+#if CPU_FEATURE_SSE
+    if (cpu_support_sse()) {
+        uint32_t *src = back_buffer;
+        uint32_t *dest = buffer;
+        uint64_t remaining = total_pixels;
+        
+        while (remaining >= 4) {
+            __asm__ volatile(
+                "movdqu (%0), %%xmm0\n\t"
+                "movdqu %%xmm0, (%1)\n\t"
+                : 
+                : "r" (src), "r" (dest)
+                : "xmm0", "memory"
+            );
+            src += 4;
+            dest += 4;
+            remaining -= 4;
+        }
+        /* Remaining */
+        while (remaining > 0) {
+            *dest++ = *src++;
+            remaining--;
+        }
+    } else 
+#endif
+    {
+        /* Normal */
+        for (uint64_t i = 0; i < total_pixels; i++) {
+            buffer[i] = back_buffer[i];
+        }
+    }
+}
+
 /* Draw a matrix at the specified coordinates on the screen */
 void video_draw_rect(position_t p0, position_t p1, uint32_t color)
 {
@@ -196,32 +414,29 @@ void video_draw_rect(position_t p0, position_t p1, uint32_t color)
     uint32_t y0 = p0.y;
     uint32_t x1 = p1.x;
     uint32_t y1 = p1.y;
-    for (y = y0; y <= y1; y++) {
-        /* Draw horizontal line */
+    
+    uint32_t *target_buffer = double_buffering_enabled ? back_buffer : buffer;
+    uint32_t target_stride = double_buffering_enabled ? back_buffer_stride : stride;
+    
+    for (uint32_t y = y0; y <= y1; y++) {
+        uint32_t *line = target_buffer + y * target_stride + x0;
+        size_t count = x1 - x0 + 1;
+        
 #if defined(__x86_64__) || defined(__i386__)
-        uint32_t *line  = buffer + y * stride + x0;
-        size_t    count = x1 - x0 + 1;
         __asm__ volatile("rep stosl" : "+D"(line), "+c"(count) : "a"(color) : "memory");
 #else
-        for (uint32_t x = x0; x <= x1; x++) video_draw_pixel(x, y, color);
+        for (uint32_t x = x0; x <= x1; x++) {
+            line[x] = color;
+        }
 #endif
     }
+    
+    video_mark_dirty(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 }
 
-/* Draw a character at the specified coordinates on the screen */
 void video_draw_char(const char c, uint32_t x, uint32_t y, uint32_t color)
 {
-    uint8_t *font = ascii_font;
-    font += (size_t)c * 16;
-    for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 9; j++) {
-            if (font[i] & (0x80 >> j)) {
-                video_draw_pixel(x + j, y + i, color);
-            } else {
-                video_draw_pixel(x + j, y + i, back_color);
-            }
-        }
-    }
+    video_draw_char_sse(c, x, y, color);
 }
 
 /* Print a character at the specified coordinates on the screen */
@@ -260,19 +475,21 @@ void video_put_char(const char c, uint32_t color)
         return;
     }
     video_scroll();
-    x = (cx - 1) * 9;
-    y = cy * 16;
-    video_draw_char(c, x, y, color);
+
+    // 在绘制字符后调用局部刷新
+    video_draw_char(c, (cx - 1) * 9, cy * 16, color);
 }
 
 /* Print a string at the specified coordinates on the screen */
 void video_put_string(const char *str)
 {
     for (; *str; ++str) video_put_char(*str, fore_color);
+    video_partial_refresh();
 }
 
 /* Print a string with color at the specified coordinates on the screen */
 void video_put_string_color(const char *str, uint32_t color)
 {
     for (; *str; ++str) video_put_char(*str, color);
+    video_partial_refresh();
 }
