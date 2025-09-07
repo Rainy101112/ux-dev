@@ -14,6 +14,29 @@
 
 #include "stdint.h"
 
+#ifndef FRAMEBUFFER_NOHEAP_WIDTH
+#    define FRAMEBUFFER_NOHEAP_WIDTH 640
+#endif
+
+#ifndef FRAMEBUFFER_NOHEAP_HEIGHT
+#    define FRAMEBUFFER_NOHEAP_HEIGHT 480
+#endif
+
+#define DOUBLE_BUFFERING 1
+#define MAX_CACHE_SIZE   256  // 256 bytes
+
+typedef struct {
+    uint32_t x1, y1;    // Top left corner
+    uint32_t x2, y2;    // Bottom right corner
+    uint8_t     dirty;  // Dirty or not
+} dirty_region_t;
+
+typedef struct {
+    uint32_t *bitmap;      // Font bitmap to pre-render
+    uint32_t  timestamp;   // For LRU
+    uint8_t      valid;    // Cache is vaild/invaild
+} glyph_cache_t;
+
 typedef struct {
         uint8_t red;
         uint8_t green;
@@ -90,5 +113,24 @@ void video_put_string(const char *str);
 
 /* Print a string with color at the specified coordinates on the screen */
 void video_put_string_color(const char *str, uint32_t color);
+
+/* Set display region size */
+void video_display_size_set(uint32_t width, uint32_t height);
+
+void video_display_position_get(uint32_t *x, uint32_t *y);
+
+void video_display_position_set(uint32_t x, uint32_t y);
+
+void video_move_to(uint32_t c_x, uint32_t c_y);
+
+void video_draw_rect_display(position_t p0, position_t p1, uint32_t color);
+
+void video_invoke_display_area(position_t p0, position_t p1, void (*callback)(position_t p));
+
+uint32_t video_get_pixel_display(uint32_t dx, uint32_t dy);
+
+void video_draw_pixel_display(uint32_t dx, uint32_t dy, uint32_t color);
+
+void video_clear_display_area(void);
 
 #endif // INCLUDE_VIDEO_H_
