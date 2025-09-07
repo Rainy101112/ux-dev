@@ -34,7 +34,7 @@ typedef struct {
 typedef struct {
     uint32_t *bitmap;      // Font bitmap to pre-render
     uint32_t  timestamp;   // For LRU
-    uint8_t      valid;    // Cache is vaild/invaild
+    uint8_t   valid;    // Cache is vaild/invaild
 } glyph_cache_t;
 
 typedef struct {
@@ -47,6 +47,21 @@ typedef struct {
         uint32_t x;
         uint32_t y;
 } position_t;
+
+typedef struct video_handler
+{
+        void (*video_clear)(void);
+        void (*video_clear_color)(uint32_t);
+        void (*video_scroll)(void);
+        void (*video_draw_pixel)(uint32_t, uint32_t, uint32_t);
+        uint32_t (*video_get_pixel)(uint32_t, uint32_t);
+        void (*video_invoke_area)(position_t, position_t, void (*callback)(position_t));
+        void (*video_draw_rect)(position_t, position_t, uint32_t);
+        void (*video_draw_char)(const char, uint32_t, uint32_t, uint32_t);
+        void (*video_put_char)(const char, uint32_t);
+        void (*video_put_string)(const char *);
+        void (*video_put_string_color)(const char *, uint32_t);
+} video_handler_t;
 
 typedef struct {
         uint32_t *framebuffer;       // Frame buffer
