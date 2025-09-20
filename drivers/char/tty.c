@@ -12,6 +12,7 @@
 #include "tty.h"
 #include "alloc.h"
 #include "cmdline.h"
+#include "device.h"
 #include "serial.h"
 #include "spin_lock.h"
 #include "stdint.h"
@@ -261,4 +262,23 @@ void tty_print_str(const char *str)
         tty_buff_add(*str_clone);
         str_clone++;
     }
+}
+
+static void tty_dev_write(const char ch)
+{
+    tty_print_ch(ch);
+}
+
+static char tty_dev_read(void)
+{
+    return 0;
+}
+
+dev_op_t tty_dev_op = {.write = tty_dev_write, .read = tty_dev_read, .type = DEV_CHAR, .name = "tty"};
+
+void init_tty(void)
+{
+    device_register(tty_dev_op);
+
+    return;
 }

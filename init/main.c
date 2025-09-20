@@ -14,6 +14,7 @@
 #include "common.h"
 #include "cpuid.h"
 #include "debug.h"
+#include "device.h"
 #include "eis.h"
 #include "frame.h"
 #include "gdt.h"
@@ -30,6 +31,7 @@
 #include "serial.h"
 #include "smbios.h"
 #include "smp.h"
+#include "tty.h"
 #include "uinxed.h"
 #include "video.h"
 
@@ -81,19 +83,22 @@ void kernel_entry(void)
     plogk("x86/PAT: Configuration [0-7]: %s\n", get_pat_config().pat_str);
     plogk("dmi: %s %s, BIOS %s %s\n", smbios_sys_manufacturer(), smbios_sys_product_name(), smbios_bios_version(), smbios_bios_release_date());
 
-    init_gdt();           // Initialize global descriptors
-    init_idt();           // Initialize interrupt descriptor
-    isr_registe_handle(); // Register ISR interrupt processing
-    acpi_init();          // Initialize ACPI
-    smp_init();           // Initialize SMP
-    print_memory_map();   // Print memory map information
-    init_frame();         // Initialize memory frame
-    pci_init();           // Initialize PCI
-    lmodule_init();       // Initialize the passed-in resource module list
-    init_ide();           // Initialize ATA/ATAPI driver
-    init_serial();        // Initialize the serial port
-    init_parallel();      // Initialize the parallel port
-    init_ps2();           // Initialize PS/2 controller
+    init_gdt();                        // Initialize global descriptors
+    init_idt();                        // Initialize interrupt descriptor
+    isr_registe_handle();              // Register ISR interrupt processing
+    acpi_init();                       // Initialize ACPI
+    smp_init();                        // Initialize SMP
+    print_memory_map();                // Print memory map information
+    init_frame();                      // Initialize memory frame
+    pci_init();                        // Initialize PCI
+    lmodule_init();                    // Initialize the passed-in resource module list
+    init_device(DEVICE_COUNT_DEFAULT); // Initialize device manager
+    init_tty();                        // Initialize teletype
+    init_ide();                        // Initialize ATA/ATAPI driver
+    init_serial();                     // Initialize the serial port
+    init_parallel();                   // Initialize the parallel port
+    init_ps2();                        // Initialize PS/2 controller
+
     enable_intr();
 
     panic("No operation.");
