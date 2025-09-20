@@ -1,5 +1,6 @@
 #include "device.h"
 #include "alloc.h"
+#include "printk.h"
 #include "stddef.h"
 #include "stdint.h"
 #include "string.h"
@@ -27,6 +28,9 @@ int device_register(dev_op_t op)
     for (int i = 0; i < device_max; i++) {
         if (device_list[i].type == DEV_NULL) {
             device_list[i] = op;
+
+            plogk("device: Registered device successfully. Type: %d Name: %s.\n", op.type, op.name);
+
             return i;
         }
     }

@@ -97,7 +97,7 @@ void init_ps2(void)
     if (ps2_read_data() != PS2_RESPONSE_SELFTEST) {
         plogk("ps/2: Controller self-test failed.\n");
     } else {
-        plogk("ps/2: Controller self-test successful.\n");
+        plogk("ps/2: Controller self-test successfully.\n");
     }
 
     /* Detect whether it is a dual-channel controller */

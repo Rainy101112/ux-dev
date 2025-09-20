@@ -13,6 +13,7 @@
 #include "alloc.h"
 #include "cmdline.h"
 #include "device.h"
+#include "printk.h"
 #include "serial.h"
 #include "spin_lock.h"
 #include "stdint.h"
@@ -279,6 +280,7 @@ dev_op_t tty_dev_op = {.write = tty_dev_write, .read = tty_dev_read, .type = DEV
 void init_tty(void)
 {
     device_register(tty_dev_op);
+    plogk("tty: Initialized successfully.\n");
 
     return;
 }
